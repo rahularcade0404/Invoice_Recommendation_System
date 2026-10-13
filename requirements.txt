@@ -1,0 +1,20 @@
+# Recommendation pipeline and data processing
+numpy
+pandas
+scikit-learn
+openpyxl
+
+# Database persistence
+SQLAlchemy
+PyMySQL
+python-dotenv
+
+# API and dashboard
+fastapi
+uvicorn
+streamlit
+
+# API smoke-test client and formatted terminal output
+requests
+tabulate
+
