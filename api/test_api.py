@@ -1,4 +1,4 @@
-import os
+"""import os
 import sys
 import time
 from urllib.parse import quote
@@ -45,4 +45,35 @@ if response.status_code == 200:
     print(f"\n=== State Recommendations for {CONTACT_NAME} ===")
     print(tabulate(df, headers="keys", tablefmt="psql", showindex=False))
 else:
-    print(f"Error {response.status_code}: {response.text}")
+    print(f"Error {response.status_code}: {response.text}") """
+
+import pandas as pd
+from urllib.parse import quote
+from tabulate import tabulate
+from fastapi.testclient import TestClient
+
+from api.api import app
+
+CONTACT_NAME = "A M Auto Sales"
+
+client = TestClient(app)
+
+def test_state_recommendations():
+    health_response = client.get("/health")
+    assert health_response.status_code == 200, health_response.text
+
+    health_data = health_response.json()
+    assert health_data.get("status") == "healthy"
+
+    url = f"/recommendations/state/{quote(CONTACT_NAME, safe='')}"
+    response = client.get(url, params={"top_n": 3})
+    assert response.status_code == 200, response.text
+
+    data = response.json()
+    assert isinstance(data, list), data
+
+    df = pd.DataFrame(data)
+    assert not df.empty, "No recommendations returned"
+
+    print(f"\n=== State Recommendations for {CONTACT_NAME} ===")
+    print(tabulate(df, headers="keys", tablefmt="psql", showindex=False))
