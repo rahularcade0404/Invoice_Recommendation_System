@@ -22,8 +22,14 @@ from database.batch_db_pipeline import batch_generate_and_save_to_db
 from data_preprocessing import load_and_preprocess_data
 from matrix_construction import build_user_item_matrix
 from cosine_similarity import compute_similarity_matrices
-from database.database import SavedRecommendation, get_db, init_db
-from sqlalchemy import func
+from database.database import (
+    MajorityReorderRecommendation,
+    SavedRecommendation,
+    StateRecommendation as StateRecommendationRecord,
+    get_db,
+    init_db,
+)
+from sqlalchemy import Float, cast, func
 from sqlalchemy.orm import Session
 
 
@@ -336,7 +342,6 @@ async def get_majority_reorders(customer_id: str, top_n: int = Query(3, ge=1, le
 async def get_state_recommendations(
     customer_id: str,
     top_n: int = Query(3, ge=1, le=10),
-    low_qty_threshold: int = Query(1, ge=0),
 ):
     """Fetches regional state-level majority recommendations."""
     if "raw_df" not in DATA_CACHE:
@@ -350,7 +355,6 @@ async def get_state_recommendations(
             customer_id,
             DATA_CACHE["raw_df"],
             top_n=top_n,
-            low_qty_threshold=low_qty_threshold,
         ),
     )
 
@@ -377,17 +381,36 @@ async def get_saved_recommendations_from_db(
     contact_name: str, db: Session = Depends(get_db)
 ):
     """Fetch pre-computed recommendations stored for a contact."""
-    results = (
+    normalized_contact = contact_name.strip().lower()
+    collaborative_results = (
         db.query(SavedRecommendation)
-        .filter(func.lower(SavedRecommendation.contact_name) == contact_name.strip().lower())
-        .order_by(SavedRecommendation.engine_type, SavedRecommendation.id)
+        .filter(func.lower(SavedRecommendation.contact_name) == normalized_contact)
+        .filter(SavedRecommendation.engine_type == "Collaborative")
+        .order_by(SavedRecommendation.id)
+        .all()
+    )
+    majority_results = (
+        db.query(MajorityReorderRecommendation)
+        .filter(func.lower(MajorityReorderRecommendation.contact_name) == normalized_contact)
+        .order_by(MajorityReorderRecommendation.id)
+        .all()
+    )
+    state_results = (
+        db.query(StateRecommendationRecord)
+        .filter(func.lower(StateRecommendationRecord.contact_name) == normalized_contact)
+        .order_by(
+            cast(
+                func.replace(StateRecommendationRecord.recommendation_score, "%", ""),
+                Float,
+            ).desc()
+        )
         .all()
     )
 
-    if not results:
+    if not collaborative_results and not majority_results and not state_results:
         raise HTTPException(status_code=404, detail="No stored recommendations found for contact.")
 
-    return [
+    results = [
         {
             "id": result.id,
             "contact_name": result.contact_name,
@@ -398,15 +421,45 @@ async def get_saved_recommendations_from_db(
             "state": result.state,
             "generated_at": result.generated_at,
         }
-        for result in results
+        for result in collaborative_results
     ]
+    results.extend(
+        {
+            "id": result.id,
+            "contact_name": result.contact_name,
+            "engine_type": "Majority_Reorder",
+            "recommended_part_group": result.recommended_part_group,
+            "material": result.material,
+            "material_desc": result.material_desc,
+            "previously_bought_qty": result.previously_bought_qty,
+            "recommended_qty": result.recommended_qty,
+            "recommendation_score": result.recommendation_score,
+            "state": result.state,
+            "generated_at": result.generated_at,
+        }
+        for result in majority_results
+    )
+    results.extend(
+        {
+            "id": result.id,
+            "contact_name": result.contact_name,
+            "engine_type": "State_Majority",
+            "recommended_part_group": result.recommended_part_group,
+            "previously_bought_qty": result.previously_bought_qty,
+            "recommended_qty": result.recommended_qty,
+            "recommendation_score": result.recommendation_score,
+            "state": result.state,
+            "generated_at": result.generated_at,
+        }
+        for result in state_results
+    )
+    return results
 
 
 @app.get("/recommendations/state/{customer_id}/csv")
 async def download_state_recommendations_csv(
     customer_id: str,
     top_n: int = Query(3, ge=1, le=10),
-    low_qty_threshold: int = Query(1, ge=0),
 ):
     """Fetch state recommendations as a downloadable CSV."""
     if "raw_df" not in DATA_CACHE:
@@ -421,7 +474,6 @@ async def download_state_recommendations_csv(
             customer_id,
             DATA_CACHE["raw_df"],
             top_n=top_n,
-            low_qty_threshold=low_qty_threshold,
         ),
     )
 

@@ -28,7 +28,11 @@ while True:
         time.sleep(1)
 
 try:
-    response = requests.get(URL,params={"top_n": 3, "low_qty_threshold": 2},timeout=30,)
+    response = requests.get(
+        URL,
+        params={"top_n": 3},
+        timeout=30,
+    )
 except requests.RequestException as exc:
     print(f"API request failed: {exc}")
     sys.exit(1)

@@ -125,9 +125,7 @@ def generate_recommendations(data: pd.DataFrame) -> pd.DataFrame:
     recommendations["Recommended Quantity"] = max(1, int(round(average_quantity)))
     recommendations["Contact Name"] = target_contact
 
-    product_details = data[
-        ["Material", "Material Desc", "Part Group"]
-    ].drop_duplicates(subset="Material")
+    product_details = data[["Material", "Material Desc", "Part Group"]].drop_duplicates(subset="Material")
     recommendations = recommendations.merge(product_details, on="Material", how="left")
     output = recommendations[
         [

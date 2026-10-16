@@ -479,7 +479,6 @@ with col2:
             selected_contact,
             raw_df,
             top_n=top_n,
-            low_qty_threshold=2
         )
 
 
@@ -517,7 +516,7 @@ with col2:
                     "Part Group",
                     "Material",
                     "Material Desc",
-                    "Customer_Bought_Qty",
+                    "Previously Bought Qty",
                     "Recommended Quantity",
                     "Recommendation Score"
                 ]

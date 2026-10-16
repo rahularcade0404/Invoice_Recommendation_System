@@ -39,20 +39,71 @@ class SavedRecommendation(Base):
     recommended_qty = Column(Integer, nullable=True)
     recommendation_score = Column(String(64))
     state = Column(String(255), nullable=True)
-    generated_at = Column(DateTime, default=datetime.datetime.utcnow)
+    
 
+
+class MajorityReorderRecommendation(Base):
+    __tablename__ = "majority_reorders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    contact_name = Column(String(255), index=True)
+    recommended_part_group = Column(String(255))
+    material = Column(String(255))
+    material_desc = Column(String(512))
+    previously_bought_qty = Column(Integer, nullable=True)
+    recommended_qty = Column(Integer, nullable=True)
+    recommendation_score = Column(String(64))
+    state = Column(String(255), nullable=True)
+    
+
+
+class StateRecommendation(Base):
+    __tablename__ = "same_state_recommendations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    contact_name = Column(String(255), index=True)
+    recommended_part_group = Column(String(255))
+    previously_bought_qty = Column(Integer, nullable=True)
+    recommended_qty = Column(Integer, nullable=True)
+    recommendation_score = Column(String(64))
+    state = Column(String(255), nullable=True)
 
 # Initialize DB Tables
 def init_db():
     inspector = inspect(engine)
+    if inspector.has_table("majority_reorders"):
+        column_names = {
+            column["name"]
+            for column in inspector.get_columns("majority_reorders")
+        }
+        if "previously_bought_qty" not in column_names:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "ALTER TABLE majority_reorders "
+                        "ADD COLUMN previously_bought_qty INTEGER NULL"
+                    )
+                )
+
+    if inspector.has_table("same_state_recommendations"):
+        column_names = {
+            column["name"]
+            for column in inspector.get_columns("same_state_recommendations")
+        }
+        if "previously_bought_qty" not in column_names:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "ALTER TABLE same_state_recommendations "
+                        "ADD COLUMN previously_bought_qty INTEGER NULL"
+                    )
+                )
+
     if inspector.has_table("recommendations"):
         column_names = {
             column["name"] for column in inspector.get_columns("recommendations")
         }
-        if (
-            "item_or_part_group" in column_names
-            and "recommended_part_group" not in column_names
-        ):
+        if ("item_or_part_group" in column_names and "recommended_part_group" not in column_names):
             with engine.begin() as connection:
                 connection.execute(
                     text(

@@ -1,16 +1,14 @@
 import pandas as pd
 from pathlib import Path
 from sklearn.metrics.pairwise import cosine_similarity
-from database.database import SavedRecommendation, SessionLocal, init_db
+from database.database import (
+    MajorityReorderRecommendation,
+    SavedRecommendation,
+    SessionLocal,
+    StateRecommendation,
+    init_db,
+)
 from recommendation_engine import (recommend_majority_bought_products,recommend_products_item_based,recommend_state_majority_products,)
-import os
-
-# This gets the absolute path of the directory containing the current script
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# This safely joins that path with your database file name
-db_path = os.path.join(BASE_DIR, "ecommerce_recommendations.db")
-
 
 def batch_generate_and_save_to_db(raw_df: pd.DataFrame):
     """Iterates over all contacts, calculates recommendations, and stores them in SQL."""
@@ -19,6 +17,8 @@ def batch_generate_and_save_to_db(raw_df: pd.DataFrame):
 
     # Clear previous recommendations before refreshing
     db.query(SavedRecommendation).delete()
+    db.query(MajorityReorderRecommendation).delete()
+    db.query(StateRecommendation).delete()
     db.commit()
 
     # Standardize string fields
@@ -80,6 +80,7 @@ def batch_generate_and_save_to_db(raw_df: pd.DataFrame):
 
     contacts = raw_df["Contact Name"].unique()
     records_to_insert = []
+    state_records_to_insert = []
 
     for contact in contacts:
         # 1. Collaborative Filtering Recs
@@ -106,37 +107,46 @@ def batch_generate_and_save_to_db(raw_df: pd.DataFrame):
         if not majority_recs.empty:
             for _, row in majority_recs.iterrows():
                 records_to_insert.append(
-                    SavedRecommendation(
+                    MajorityReorderRecommendation(
                         contact_name=contact,
-                        engine_type="Majority_Reorder",
                         recommended_part_group=str(row["Recommended Part Group"]),
+                        material=str(row["Material"]),
+                        material_desc=str(row["Material Desc"]),
+                        previously_bought_qty=int(row["Previously Bought Quantity"]),
                         recommended_qty=int(row["Recommended Quantity"]),
                         recommendation_score=f"{row['Recommendation Score']:.2f}%",
-                        state=customer_state.get(contact),
                     )
                 )
 
         # 3. State Majority Bestsellers
         state_recs = recommend_state_majority_products(contact, raw_df, customer_col="Contact Name", top_n=3)
         if not state_recs.empty:
-            item_col = ("Part Group" if "Part Group" in state_recs.columns else "Product ID")
             for _, row in state_recs.iterrows():
-                records_to_insert.append(
-                    SavedRecommendation(
+                state_records_to_insert.append(
+                    StateRecommendation(
                         contact_name=contact,
-                        engine_type="State_Majority",
-                        recommended_part_group=str(row[item_col]),
+                        recommended_part_group=str(row["Part Group"]),
+                        previously_bought_qty=int(row["Previously Bought Qty"]),
                         recommended_qty=int(row["Recommended Quantity"]),
                         recommendation_score=f"{row['Recommendation Score']:.2f}%",
                         state=str(row["Customer State Name"]),
                     )
                 )
 
+    state_records_to_insert.sort(
+        key=lambda record: float(record.recommendation_score.rstrip("%")),
+        reverse=True,
+    )
+
     # Bulk insert all generated recommendations into SQL
-    db.bulk_save_objects(records_to_insert)
+    if records_to_insert:
+        db.bulk_save_objects(records_to_insert)
+    if state_records_to_insert:
+        db.bulk_save_objects(state_records_to_insert)
     db.commit()
     db.close()
-    print(f"Successfully calculated and saved {len(records_to_insert)} recommendations to SQL Database.")
+    total_records = len(records_to_insert) + len(state_records_to_insert)
+    print(f"Successfully calculated and saved {total_records} recommendations to SQL Database.")
 
 
 if __name__ == "__main__":
